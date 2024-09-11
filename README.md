@@ -1,12 +1,104 @@
-# jobthing
-Creates and manages processes according to a job specification file. Completed for the course CSSE2310 (a3).
+# jobthing 
+`jobthing` is a process management tool that reads job configurations from a file and spawns processes according to the provided specifications. It can manage multiple processes, handle inter-process communication, and react to specific system signals. `jobthing` can optionally connect process input/output to files or pipes, allowing for complex workflows.
+## Command Line Arguments 
 
-Written to specification "CSSE2310-7231 A3 specification - 2022 sem2 v1.4.pdf" which was supplied by the CSSE2310 course. The full spec is provided in the repository. A summary of the spec is provided below.
 
-## Introduction
-You are to create a program called jobthing, which creates and manages processes according to a job specification file, and must monitor and maintain the status and input/output requirements of those processes. The assignment will also test your ability to code to a programming style guide and to use a revision control system appropriately.
+```Copy code
+./jobthing [-v] [-i inputfile] jobfile
+```
+ 
+- **`jobfile`** : (Mandatory) The name of the job specification file.
+ 
+- **`-v`** : (Optional) Enables verbose mode, providing additional debug and status information.
+ 
+- **`-i inputfile`** : (Optional) Specifies an input file for `jobthing` and its processes. If not provided, input is taken from stdin.
 
-## jobthing basic behaviour
-jobthing reads the job specification file provided on the command line, spawning child processes and executing programs as required. In general, jobthing is required to maintain a constant process state, regardless of what happens to those child processes and programs. For example, if a child process is killed or terminates somehow, then, unless otherwise specified, jobthing is required to notice this, and re-spawn the job as required, up to the maximum number of retries specified for each job.
+Invalid combinations or incorrect arguments will result in a usage message:
 
-Depending on the contents of the jobfile, each job created by jobthing may have its stdin and stdout connected to a pipe (back to jobthing), or to a file on the filesystem. Once jobthing has created the initial set of jobs, it is to take input either from stdin, or from the file specified with the -i inputfile commandline argument, one line at a time. By default each input line should be sent to each job to which jobthing has a pipe connection, however a line starting with the asterisk character ‘*’ will be interpreted as a command. After sending the input text to each job, jobthing will then attempt to read a line of input from each job (again, only those to which jobthing is connected by a pipe). Output received from jobs is emitted to jobthing’s standard output. Upon reading EOF from the input (stdin or the input file), jobthing shall terminate.
+
+```Copy code
+Usage: jobthing [-v] [-i inputfile] jobfile
+```
+If the specified input file (`-i`) or jobfile cannot be read, an error message is displayed and the program exits with a specific return code: 
+- Return code `1`: Invalid command line arguments.
+ 
+- Return code `2`: Job file cannot be opened.
+ 
+- Return code `3`: Input file cannot be opened.
+
+### Process Creation and Management 
+`jobthing` reads the job specification file, spawns child processes, and executes the commands defined. It ensures process management is maintained even if some processes terminate unexpectedly. Based on the job configuration, `jobthing` may re-launch processes up to a specified number of times or indefinitely.
+## Job Specification Format 
+
+The job specification file consists of one line per job with the following format:
+
+
+```Copy code
+numrestarts:input:output:cmd [arg1 arg2 ...]
+```
+
+Where:
+ 
+- **`numrestarts`** : Specifies the number of times a job should be restarted if it terminates. `0` indicates infinite restarts, and `1` means no restarts.
+ 
+- **`input`** : If empty, the job receives input from a pipe connected to `jobthing`. Otherwise, the named file is opened for input.
+ 
+- **`output`** : If empty, the job sends output to a pipe connected to `jobthing`. Otherwise, the named file is opened for output.
+ 
+- **`cmd [arg1 arg2 ...]`** : The command to be executed along with its arguments.
+
+## Example Job Configurations 
+
+
+```Copy code
+# A job running cat with stdin/stdout connected to jobthing, launched once.
+1:::cat
+
+# A job running cat, stdin from /etc/services, stdout to foo.out, launched once.
+1:/etc/services:foo.out:cat
+
+# A job running cat, restarted up to 5 times on failure.
+5:::cat
+
+# A job running cat, relaunched indefinitely upon termination.
+0:::cat
+```
+
+## Verbose Mode 
+If verbose mode is enabled (`-v`), the following additional information is displayed: 
+- For each valid job specification read from the jobfile, `jobthing` emits:
+
+```Copy code
+Registering worker N: cmd arg1 arg2 ...
+```
+Where `N` is the job number, and `cmd`, `arg1`, `arg2`, etc., are the command and its arguments.
+
+## Input and Command Handling 
+Once the jobs are launched, `jobthing` reads input either from stdin or the provided input file. By default, each line is sent to all jobs connected by a pipe. Lines starting with `*` are treated as commands to control the behavior of the program or report statistics.
+## Signals and Job Monitoring 
+`jobthing` monitors its child processes and handles specific signals. If a child process terminates, `jobthing` checks whether the job should be restarted based on the number of allowed restarts specified in the jobfile. For terminated jobs, `jobthing` logs:
+
+```Copy code
+Job N has terminated with exit code M
+Job N has terminated due to signal S
+```
+
+## Example Verbose Output 
+
+
+```Copy code
+Registering worker 1: cat
+Registering worker 2: tee logfile.txt
+Spawning worker 1
+Spawning worker 2
+```
+
+## Error Handling 
+Errors related to file operations are logged to `stderr` and cause the affected job to be marked as invalid and unrunnable. Errors include:
+- Failure to open input/output files.
+
+- Invalid job specifications in the jobfile.
+
+## Shutdown 
+
+The program terminates when EOF is encountered on the input stream (either stdin or the input file) or when all jobs are marked invalid and no further processes can be managed.
